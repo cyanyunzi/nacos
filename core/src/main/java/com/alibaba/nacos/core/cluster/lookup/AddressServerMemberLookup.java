@@ -40,7 +40,6 @@ import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.HashMap;
 import java.util.Map;
-
 /**
  * Cluster member addressing mode for the address server.
  *

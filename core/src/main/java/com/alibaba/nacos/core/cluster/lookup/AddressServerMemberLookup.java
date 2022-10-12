@@ -19,24 +19,27 @@ package com.alibaba.nacos.core.cluster.lookup;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.common.http.HttpClientBeanHolder;
 import com.alibaba.nacos.common.http.client.NacosRestTemplate;
-import com.alibaba.nacos.common.http.param.Header;
-import com.alibaba.nacos.common.http.param.Query;
-import com.alibaba.nacos.common.model.RestResult;
 import com.alibaba.nacos.common.utils.ExceptionUtil;
+import com.alibaba.nacos.common.utils.StringUtils;
 import com.alibaba.nacos.core.cluster.AbstractMemberLookup;
 import com.alibaba.nacos.core.cluster.MemberUtil;
 import com.alibaba.nacos.core.utils.GenericType;
 import com.alibaba.nacos.core.utils.GlobalExecutor;
 import com.alibaba.nacos.core.utils.Loggers;
 import com.alibaba.nacos.sys.env.EnvUtil;
-import com.alibaba.nacos.common.utils.StringUtils;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.RestTemplate;
 
+import javax.net.ssl.*;
+import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
+import java.net.HttpURLConnection;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.util.HashMap;
 import java.util.Map;
-
-import static com.alibaba.nacos.common.constant.RequestUrlConstants.HTTP_PREFIX;
 
 /**
  * Cluster member addressing mode for the address server.
@@ -92,7 +95,11 @@ public class AddressServerMemberLookup extends AbstractMemberLookup {
     private static final String ADDRESS_SERVER_URL_PROPERTY = "address.server.url";
     
     private static final String ADDRESS_SERVER_RETRY_PROPERTY = "nacos.core.address-server.retry";
-    
+
+    private static final String ADDRESS_HTTP_PROTOCOL = "address.http.protocol";
+    private static final int HTTP_200 = 200;
+
+
     @Override
     public void doStart() throws NacosException {
         this.maxFailCount = Integer.parseInt(EnvUtil.getProperty(HEALTH_CHECK_FAIL_COUNT_PROPERTY, DEFAULT_HEALTH_CHECK_FAIL_COUNT));
@@ -124,8 +131,8 @@ public class AddressServerMemberLookup extends AbstractMemberLookup {
         } else {
             addressUrl = envAddressUrl;
         }
-        addressServerUrl = HTTP_PREFIX + domainName + ":" + addressPort + addressUrl;
-        envIdUrl = HTTP_PREFIX + domainName + ":" + addressPort + "/env";
+        addressServerUrl =  EnvUtil.getProperty(ADDRESS_HTTP_PROTOCOL) + domainName + ":" + addressPort + addressUrl;
+        envIdUrl =  EnvUtil.getProperty(ADDRESS_HTTP_PROTOCOL) + domainName + ":" + addressPort + "/env";
         
         Loggers.CORE.info("ServerListService address-server port:" + addressPort);
         Loggers.CORE.info("ADDRESS_SERVER_URL:" + addressServerUrl);
@@ -171,11 +178,11 @@ public class AddressServerMemberLookup extends AbstractMemberLookup {
     }
     
     private void syncFromAddressUrl() throws Exception {
-        RestResult<String> result = restTemplate
-                .get(addressServerUrl, Header.EMPTY, Query.EMPTY, genericType.getType());
-        if (result.ok()) {
+        RestTemplate myRestTemplate = MyRestTemplate.getMyRestTemplate();
+        ResponseEntity<String> responseEntity = myRestTemplate.getForEntity(addressServerUrl, String.class);
+        if (responseEntity.getStatusCode().value()==HTTP_200) {
             isAddressServerHealth = true;
-            Reader reader = new StringReader(result.getData());
+            Reader reader = new StringReader(responseEntity.getBody());
             try {
                 afterLookup(MemberUtil.readServerConf(EnvUtil.analyzeClusterConf(reader)));
             } catch (Throwable e) {
@@ -188,7 +195,7 @@ public class AddressServerMemberLookup extends AbstractMemberLookup {
             if (addressServerFailCount >= maxFailCount) {
                 isAddressServerHealth = false;
             }
-            Loggers.CLUSTER.error("[serverlist] failed to get serverlist, error code {}", result.getCode());
+            Loggers.CLUSTER.error("[serverlist] failed to get serverlist, error code {}", responseEntity.getStatusCode().value());
         }
     }
     
@@ -210,6 +217,63 @@ public class AddressServerMemberLookup extends AbstractMemberLookup {
             } finally {
                 GlobalExecutor.scheduleByCommon(this, DEFAULT_SYNC_TASK_DELAY_MS);
             }
+        }
+    }
+
+    public static class MyRestTemplate {
+        private static RestTemplate restTemplate = new RestTemplate(new Ssl());
+
+        public static RestTemplate getMyRestTemplate(){
+            return restTemplate;
+        }
+
+    }
+
+    public static class SkipHostNameVerifier implements HostnameVerifier {
+        @Override
+        public boolean verify(String s, SSLSession sslSession) {
+            return true;
+        }
+    }
+
+    public static class SkipX509TrustManager implements X509TrustManager {
+        @Override
+        public X509Certificate[] getAcceptedIssuers() {
+            return new X509Certificate[0];
+        }
+
+        @Override
+        public void checkClientTrusted(X509Certificate[] chain, String authType) {
+        }
+
+        @Override
+        public void checkServerTrusted(X509Certificate[] chain, String authType) {
+        }
+    }
+
+    public static class Ssl extends SimpleClientHttpRequestFactory {
+        protected void prepareConnection(HttpURLConnection connection, String httpMethod)
+                throws IOException {
+            if (connection instanceof HttpsURLConnection) {
+                prepareHttpsConnection((HttpsURLConnection) connection);
+            }
+            super.prepareConnection(connection, httpMethod);
+        }
+
+        private void prepareHttpsConnection(HttpsURLConnection connection) {
+            connection.setHostnameVerifier(new SkipHostNameVerifier());
+            try {
+                connection.setSSLSocketFactory(createSslSocketFactory());
+            } catch (Exception ex) {
+                // Ignore
+            }
+        }
+
+        private SSLSocketFactory createSslSocketFactory() throws Exception {
+            SSLContext context = SSLContext.getInstance("TLS");
+            context.init(null, new TrustManager[]{new SkipX509TrustManager()},
+                    new SecureRandom());
+            return context.getSocketFactory();
         }
     }
 }

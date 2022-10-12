@@ -53,7 +53,7 @@ public class ExternalDataSourceProperties {
     private List<String> url = new ArrayList<>();
     
     private List<String> user = new ArrayList<>();
-    
+
     private List<String> password = new ArrayList<>();
     
     public void setNum(Integer num) {

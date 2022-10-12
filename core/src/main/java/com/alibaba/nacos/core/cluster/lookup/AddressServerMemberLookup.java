@@ -23,20 +23,18 @@ import com.alibaba.nacos.common.http.param.Header;
 import com.alibaba.nacos.common.http.param.Query;
 import com.alibaba.nacos.common.model.RestResult;
 import com.alibaba.nacos.common.utils.ExceptionUtil;
+import com.alibaba.nacos.common.utils.StringUtils;
 import com.alibaba.nacos.core.cluster.AbstractMemberLookup;
 import com.alibaba.nacos.core.cluster.MemberUtil;
 import com.alibaba.nacos.core.utils.GenericType;
 import com.alibaba.nacos.core.utils.GlobalExecutor;
 import com.alibaba.nacos.core.utils.Loggers;
 import com.alibaba.nacos.sys.env.EnvUtil;
-import com.alibaba.nacos.common.utils.StringUtils;
 
 import java.io.Reader;
 import java.io.StringReader;
 import java.util.HashMap;
 import java.util.Map;
-
-import static com.alibaba.nacos.common.constant.RequestUrlConstants.HTTP_PREFIX;
 
 /**
  * Cluster member addressing mode for the address server.
@@ -92,7 +90,10 @@ public class AddressServerMemberLookup extends AbstractMemberLookup {
     private static final String ADDRESS_SERVER_URL_PROPERTY = "address.server.url";
     
     private static final String ADDRESS_SERVER_RETRY_PROPERTY = "nacos.core.address-server.retry";
-    
+
+    private static final String ADDRESS_HTTP_PROTOCOL = "address.http.protocol";
+
+
     @Override
     public void doStart() throws NacosException {
         this.maxFailCount = Integer.parseInt(EnvUtil.getProperty(HEALTH_CHECK_FAIL_COUNT_PROPERTY, DEFAULT_HEALTH_CHECK_FAIL_COUNT));
@@ -124,8 +125,8 @@ public class AddressServerMemberLookup extends AbstractMemberLookup {
         } else {
             addressUrl = envAddressUrl;
         }
-        addressServerUrl = HTTP_PREFIX + domainName + ":" + addressPort + addressUrl;
-        envIdUrl = HTTP_PREFIX + domainName + ":" + addressPort + "/env";
+        addressServerUrl = System.getenv(ADDRESS_HTTP_PROTOCOL) + domainName + ":" + addressPort + addressUrl;
+        envIdUrl = System.getenv(ADDRESS_HTTP_PROTOCOL) + domainName + ":" + addressPort + "/env";
         
         Loggers.CORE.info("ServerListService address-server port:" + addressPort);
         Loggers.CORE.info("ADDRESS_SERVER_URL:" + addressServerUrl);

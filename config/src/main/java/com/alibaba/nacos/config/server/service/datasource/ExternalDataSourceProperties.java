@@ -13,14 +13,9 @@
 
 package com.alibaba.nacos.config.server.service.datasource;
 
-import cn.hutool.core.util.CharsetUtil;
-import cn.hutool.crypto.SecureUtil;
-import cn.hutool.crypto.symmetric.AES;
 import com.alibaba.nacos.common.utils.Preconditions;
 import com.zaxxer.hikari.HikariDataSource;
 import org.apache.commons.collections.CollectionUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.core.env.Environment;
@@ -38,12 +33,7 @@ import static com.alibaba.nacos.common.utils.CollectionUtils.getOrDefault;
  * @author Nacos
  */
 public class ExternalDataSourceProperties {
-    private static final Logger LOGGER = LoggerFactory.getLogger(ExternalDataSourceServiceImpl.class);
-
-    private static final byte[] AES_KEY = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
-
-    private static final AES AES = SecureUtil.aes(AES_KEY);
-
+    
     private static final String JDBC_DRIVER_NAME = "com.mysql.cj.jdbc.Driver";
     
     private static final String TEST_QUERY = "SELECT 1";
@@ -53,7 +43,7 @@ public class ExternalDataSourceProperties {
     private List<String> url = new ArrayList<>();
     
     private List<String> user = new ArrayList<>();
-
+    
     private List<String> password = new ArrayList<>();
     
     public void setNum(Integer num) {
@@ -87,20 +77,13 @@ public class ExternalDataSourceProperties {
         Preconditions.checkArgument(CollectionUtils.isNotEmpty(password), "db.password or db.password.[index] is null");
         for (int index = 0; index < num; index++) {
             int currentSize = index + 1;
-            Preconditions.checkArgument(url.size() >= currentSize, "db.url.%s is null", index);
+            Preconditions.checkArgument(url.size() >= currentSize, "db.url.%s is null", new Object[]{index});
             DataSourcePoolProperties poolProperties = DataSourcePoolProperties.build(environment);
             poolProperties.setDriverClassName(JDBC_DRIVER_NAME);
             poolProperties.setJdbcUrl(url.get(index).trim());
             poolProperties.setUsername(getOrDefault(user, index, user.get(0)).trim());
-            String trim = getOrDefault(password, index, password.get(0)).trim();
-
-            String password = AES.decryptStr(trim, CharsetUtil.CHARSET_UTF_8);
-            LOGGER.info("数据库密码:{},解密密码:{}",trim,password);
-
-            poolProperties.setPassword(password);
-
+            poolProperties.setPassword(getOrDefault(password, index, password.get(0)).trim());
             HikariDataSource ds = poolProperties.getDataSource();
-
             ds.setConnectionTestQuery(TEST_QUERY);
             ds.setIdleTimeout(TimeUnit.MINUTES.toMillis(10L));
             ds.setConnectionTimeout(TimeUnit.SECONDS.toMillis(3L));
@@ -108,6 +91,12 @@ public class ExternalDataSourceProperties {
             callback.accept(ds);
         }
         Preconditions.checkArgument(CollectionUtils.isNotEmpty(dataSources), "no datasource available");
+
+        java.util.Iterator var8 = dataSources.iterator();
+        while(var8.hasNext()) {
+            com.zaxxer.hikari.HikariDataSource dataSource = (com.zaxxer.hikari.HikariDataSource)var8.next();
+            dataSource.setPassword(dataSource.getPassword());
+        }
         return dataSources;
     }
     
